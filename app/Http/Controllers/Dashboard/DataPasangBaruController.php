@@ -3,17 +3,30 @@
 namespace App\Http\Controllers\Dashboard;
 
 use App\Http\Controllers\Controller;
+use App\Models\DataJob;
 use Illuminate\Http\Request;
 use RealRashid\SweetAlert\Facades\Alert;
 use Yajra\Datatables\Datatables;
+use Illuminate\Support\Str; 
 
 use App\Models\Setting;
 use App\Models\DataPasangBaru;
-
+use App\Models\Karyawan;
+use App\Models\TeknisiCadangan;
+use App\Models\User;
 use Carbon\Carbon;
+use Illuminate\Support\Facades\DB;
 
 class DataPasangBaruController extends Controller
 {
+    function __construct()
+    {
+        $this->middleware('permission:data-pasang-baru-list|data-pasang-baru-create|data-pasang-baru-edit|data-pasang-baru-delete', ['only' => ['index','show']]);
+        $this->middleware('permission:data-pasang-baru-create', ['only' => ['create','store']]);
+        $this->middleware('permission:data-pasang-baru-edit', ['only' => ['edit','update']]);
+        $this->middleware('permission:data-pasang-baru-delete', ['only' => ['destroy']]);
+    }
+    
     public function index()
     {
         $title = 'Data Pasang Baru';
@@ -32,6 +45,10 @@ class DataPasangBaruController extends Controller
                 ->filter(function ($instance) use ($request) {
 					if ($request->get('status') == '0' || $request->get('status') == '1' || $request->get('status') == '2' || $request->get('status') == '3') {
                         $instance->where('status', $request->get('status'));
+                    }
+
+                    if ($request->get('created_at') != null) {
+                        $instance->whereDate('created_at', $request->created_at);
                     }
 
                     if (!empty($request->get('search'))) {
@@ -90,33 +107,109 @@ class DataPasangBaruController extends Controller
 
     public function store(Request $request)
 	{
-		$request->validate([
-            'inet' => 'required',
-            'nama_pelanggan' => 'required',
-            'no_hp' => 'required',
-            'alamat' => 'required',
-            'acuan_lokasi' => 'required',
-            'foto' => 'file|mimes:jpg,jpeg,png|max:1024'
-		]);
+        try {
+            $cekAbsensi = Karyawan::where('role_id',2)
+            ->whereHas('absensi', function($e){
+                $e->whereDate('created_at', Carbon::now());
+            })
+            ->whereDoesntHave('dataJob', function($e){
+                $e->whereDate('created_at', Carbon::now());
+            })
+            ->count();
 
-		$data['inet'] = $request->inet;
-        $data['kode'] = 'SC-'.rand();
-		$data['nama_pelanggan'] = $request->nama_pelanggan;
-		$data['no_hp'] = $request->no_hp;
-		$data['alamat'] = $request->alamat;
-		$data['acuan_lokasi'] = $request->acuan_lokasi;
-		$data['created_at'] = date('Y-m-d H:i:s');
-		$data['updated_at'] = date('Y-m-d H:i:s');
+            $cekTeknisiCadangan = Karyawan::where('role_id',2)
+            ->whereHas('absensi', function($e){
+                $e->whereDate('created_at', Carbon::now());
+            })
+            ->whereHas('teknisiCadangan', function($e){
+                $e->whereDate('created_at', Carbon::now());
+            })
+            ->count();
 
-        $file = $request->file('foto');
-        if($file){
-            $nama_file = rand().'-'. $file->getClientOriginalName();
-            $file->move('assets',$nama_file);
-            $data['foto'] = 'assets/' .$nama_file;
+            $request->validate([
+                'inet' => 'required',
+                'nama_pelanggan' => 'required',
+                'no_hp' => 'required',
+                'alamat' => 'required',
+                'acuan_lokasi' => 'required',
+                'foto' => 'file|mimes:jpg,jpeg,png|max:1024'
+            ]);
+    
+            $data['inet'] = $request->inet;
+            $data['kode'] = 'SC-'.rand();
+            $data['nama_pelanggan'] = $request->nama_pelanggan;
+            $data['no_hp'] = $request->no_hp;
+            $data['alamat'] = $request->alamat;
+            $data['acuan_lokasi'] = $request->acuan_lokasi;
+            $data['created_at'] = date('Y-m-d H:i:s');
+            $data['updated_at'] = date('Y-m-d H:i:s');
+    
+            $file = $request->file('foto');
+            if($file){
+                $nama_file = rand().'-'. $file->getClientOriginalName();
+                $file->move('assets',$nama_file);
+                $data['foto'] = 'assets/' .$nama_file;
+            }
+
+            if($cekAbsensi > 0){
+                $karyawan = Karyawan::where('role_id',2)
+                ->whereHas('absensi', function($e){
+                    $e->where('status','1');
+                    $e->whereDate('created_at', Carbon::now());
+                })
+                ->whereDoesntHave('dataJob', function($e){
+                    $e->whereDate('created_at', Carbon::now());
+                })
+                ->first();
+                
+                $dataJob['user_id'] = $karyawan->id;
+                $dataJob['created_at'] = date('Y-m-d H:i:s');
+                $dataJob['updated_at'] = date('Y-m-d H:i:s');
+
+                DB::transaction(function () use ($data, $dataJob) {
+                    $pasangBaru = DataPasangBaru::insertGetId($data);
+                    
+                    $dataJob['kode_pasang_baru'] = $pasangBaru;
+                    DataJob::insert($dataJob);
+                });
+                
+                DB::commit();
+            }elseif($cekAbsensi < 1 && $cekTeknisiCadangan > 0){
+                $karyawan = Karyawan::where('role_id',2)
+                ->whereHas('absensi', function($e){
+                    $e->where('status','1');
+                    $e->whereDate('created_at', Carbon::now());
+                })
+                ->whereHas('teknisiCadangan', function($e){
+                    $e->whereDate('created_at', Carbon::now());
+                })
+                ->first();
+                
+                $dataJob['user_id'] = $karyawan->id;
+                $dataJob['created_at'] = date('Y-m-d H:i:s');
+                $dataJob['updated_at'] = date('Y-m-d H:i:s');
+
+                DB::transaction(function () use ($data, $dataJob, $karyawan) {
+                    $pasangBaru = DataPasangBaru::insertGetId($data);
+                    
+                    $dataJob['kode_pasang_baru'] = $pasangBaru;
+                    DataJob::insert($dataJob);
+
+                    TeknisiCadangan::where('user_id',$karyawan->id)->delete();
+                });
+                
+                DB::commit();
+            }else{
+                DataPasangBaru::insert($data);
+            }
+            
+            Alert::success('Sukses','Data Pasang Baru berhasil disimpan');
+        } catch (\Throwable $e) {
+            DB::rollback();
+
+            Alert::error('Error',$e->getMessage());
         }
 
-		DataPasangBaru::insert($data);
-        Alert::success('Sukses','Data Pasang Baru berhasil disimpan');
 		return redirect()->back();
 	}
 

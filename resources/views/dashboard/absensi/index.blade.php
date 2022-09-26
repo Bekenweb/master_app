@@ -24,7 +24,11 @@
                 <div class="card-body">
                     <h4 class="card-title">{{ $title }}</h4>
                     <div class="mb-3">
+                        @if($jamSekarang > $awalAbsensi && $jamSekarang < $akhirAbsensi)
                         <button class="btn btn-primary" data-toggle="modal" data-target="#data_job">Tambah Baru</button>
+                        @else
+                        <button class="btn btn-primary absensiout">Tambah Baru</button>
+                        @endif
                     </div>
                     <!-- Modal -->
                     <div class="modal fade" id="data_job" tabindex="-1" role="dialog" aria-labelledby="exampleModalLabel" aria-hidden="true">
@@ -62,8 +66,9 @@
                             <tr>
                                 <th>#</th>
                                 <th>Nama Lengkap</th>
-                                <th>Absen Pada</th>
+                                <th>Absensi Pada</th>
                                 <th>Status</th>
+                                <th>Aksi</th>
                             </tr>
                         </thead>
                     </table>
@@ -74,40 +79,13 @@
 @endsection
 
 @section('scripts')
-
-<script type="text/javascript">
-    $(function () {
-    var table = $('#laravel_datatable').DataTable({
-        processing: true,
-        serverSide: true,
-        scrollX: true,
-        scrollCollapse: true,
-        lengthMenu: [ [10, 25, 50, -1], [10, 25, 50, "All"] ],
-        order: [[1,'asc']],
-        ajax: {
-            url: "{{ route('getjsonabsensi') }}",
-            type: "POST",
-            headers: {
-                'X-CSRF-TOKEN': '{{ csrf_token() }}',
-            },
-            data: function (d) {
-                d.waktu_absen = $('#filter-waktuabsen').val(),
-                d.search = $('input[type="search"]').val()
-            }
-        },
-        columns: [
-            {data: 'DT_RowIndex', name: 'DT_RowIndex', orderable: false, searchable: false},
-            {data: 'namakaryawan', name: 'namakaryawan'},
-            {data: 'created_at', name: 'created_at'},
-            {data: 'status', name: 'status', orderable: false, searchable: false},
-        ]
-    });
-
-    $(".filter").on('change',function(){
-        waktu_absen = $("#filter-waktuabsen").val(),
-        table.ajax.reload(null,false)
-    });
-});
-</script>
+<script src="{{ asset('theme/template/js/dashboard/new_absensi.js') }}"></script>
 @include('dashboard.absensi.validation')
+<script>
+    $(function () {
+        $('.absensiout').click(function(){
+            swal("Opps!", "Sekarang bukan waktu absensi!", "warning");
+        });
+    })
+</script>
 @endsection

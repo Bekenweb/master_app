@@ -10,56 +10,77 @@ use Illuminate\Support\Facades\DB;
 use Yajra\Datatables\Datatables;
 
 use App\Models\Absensi;
+use App\Models\DataJob;
+use App\Models\DataPasangBaru;
 use App\Models\Setting;
 use App\Models\Karyawan;
 use Carbon\Carbon;
 
 class AbsensiController extends Controller
 {
-    public function index()
+    function __construct()
     {
-        if (Auth::user()->role_id == 1) {
-            $title = 'Absensi Karyawan';
-            $appName = Setting::first();
-            $listKaryawan = Karyawan::where('role_id',2)->select('id','name')
-            ->withCount('absensi')
-            ->whereDoesnthave('absensi', function($e){
-                $hariIni = Carbon::now()->format('Y-m-d');
-                $e->where('waktu_absen', $hariIni);
-            })
-            ->where('is_verifikasi',1)
-            ->orderBy('name','ASC')
-            ->get();
-
-            return view('dashboard.absensi.index', compact('title','appName','listKaryawan'));
-        } else {
-            $title = 'Absensi Karyawan';
-            $appName = Setting::first();
-            $waktuAbsensi = Setting::select('awal_absensi','akhir_absensi')->first();
-            $awalAbsensi = $waktuAbsensi->awal_absensi;
-            $akhirAbsensi = $waktuAbsensi->akhir_absensi;
-            $jamSekarang = Carbon::now()->format('H:i:s');
-            $hariIni = Carbon::now()->format('Y-m-d');
-            
-            $cekAbsensi = Absensi::where('user_id',Auth::user()->id)->where('waktu_absen',$hariIni)->whereBetween(DB::raw('TIME(created_at)'), array($awalAbsensi, $akhirAbsensi))->count();
-            // dd($cekAbsensi);
-            return view('dashboard.absensi.karyawan', compact('title','appName','cekAbsensi','awalAbsensi','akhirAbsensi','jamSekarang','hariIni'));
-        }
+        $this->middleware('permission:absensi-list|absensi-create|absensi-edit|absensi-delete', ['only' => ['index','show']]);
+        $this->middleware('permission:absensi-create', ['only' => ['create','store']]);
+        $this->middleware('permission:absensi-edit', ['only' => ['edit','update']]);
+        $this->middleware('permission:absensi-delete', ['only' => ['destroy']]);
     }
 
+    public function index()
+    {
+        $title = 'Absensi Karyawan';
+        $appName = Setting::first();
+        $listKaryawan = Karyawan::where('role_id',2)->select('id','name')
+        ->withCount('absensi')
+        ->whereDoesnthave('absensi', function($e){
+            $hariIni = Carbon::now()->format('Y-m-d');
+            $e->where('waktu_absen', $hariIni);
+        })
+        ->where('is_verifikasi',1)
+        ->orderBy('name','ASC')
+        ->get();
+
+        $waktuAbsensi = Setting::select('awal_absensi','akhir_absensi')->first();
+        $awalAbsensi = $waktuAbsensi->awal_absensi;
+        $akhirAbsensi = $waktuAbsensi->akhir_absensi;
+        $jamSekarang = Carbon::now()->format('H:i:s');
+        
+        return view('dashboard.absensi.index', compact('title','appName','listKaryawan','awalAbsensi','akhirAbsensi','jamSekarang'));
+    }
+    
     public function add_absensi(){
         try {
             $karyawan = Auth::user()->id;
+            $cekPasangBaru = DataPasangBaru::whereDoesntHave('data_job')->count();
 
-            Absensi::where('user_id',$karyawan)->insert([
-                'user_id' => $karyawan,
-                'waktu_absen' => date('Y-m-d'),
-                'created_at' => date('Y-m-d H:i:s'),
-                'updated_at' => date('Y-m-d H:i:s'),
-            ]);
+            $absensi['user_id'] = $karyawan;
+            $absensi['waktu_absen'] = date('Y-m-d');
+            $absensi['created_at'] = date('Y-m-d H:i:s');
+            $absensi['updated_at'] = date('Y-m-d H:i:s');
+
+            if($cekPasangBaru < 1){
+                Absensi::insert($absensi);
+            }else{
+                $pasangBaru = DataPasangBaru::select('id')->whereDoesntHave('data_job')->first();
+        
+                DB::beginTransaction();
+                
+                Absensi::insert($absensi);
+                
+                $dataJob['user_id'] = $karyawan;
+                $dataJob['kode_pasang_baru'] = $pasangBaru->id;
+                $dataJob['created_at'] = date('Y-m-d H:i:s');
+                $dataJob['updated_at'] = date('Y-m-d H:i:s');
+    
+                DataJob::insert($dataJob);
+    
+                DB::commit();    
+            }
 
             Alert::success('Sukses','Terima kasih, sudah mengisi absensi hari ini');
         } catch (\Exception $e) {
+            DB::rollback();
+
             Alert::error('Error',$e->getMessage());
         }
 
@@ -68,17 +89,44 @@ class AbsensiController extends Controller
 
     public function store(Request $request)
 	{
-		$request->validate([
-			'user_id' => 'required',
-		]);
+        try {
+            $cekPasangBaru = DataPasangBaru::whereDoesntHave('data_job')->count();
+    
+            $request->validate([
+                'user_id' => 'required',
+            ]);
+    
+            $data['user_id'] = $request->user_id;
+            $data['waktu_absen'] = date('Y-m-d');
+            $data['created_at'] = date('Y-m-d H:i:s');
+            $data['updated_at'] = date('Y-m-d H:i:s');
+            
+            if($cekPasangBaru < 1){
+                Absensi::insert($data);
+            }else{
+                $pasangBaru = DataPasangBaru::select('id')->whereDoesntHave('data_job')->first();
+        
+                DB::beginTransaction();
+                
+                Absensi::insert($data);
+                
+                $dataJob['user_id'] = $request->user_id;
+                $dataJob['kode_pasang_baru'] = $pasangBaru->id;
+                $dataJob['created_at'] = date('Y-m-d H:i:s');
+                $dataJob['updated_at'] = date('Y-m-d H:i:s');
+    
+                DataJob::insert($dataJob);
+    
+                DB::commit(); 
+            }
 
-        $data['user_id'] = $request->user_id;
-        $data['waktu_absen'] = date('Y-m-d');
-		$data['created_at'] = date('Y-m-d H:i:s');
-		$data['updated_at'] = date('Y-m-d H:i:s');
+            Alert::success('Sukses','Data Absensi berhasil disimpan');
+        } catch (\Throwable $e) {
+            DB::rollback();
 
-		Absensi::insert($data);
-        Alert::success('Sukses','Data Absensi berhasil disimpan');
+            Alert::error('Error',$e->getMessage());
+        }
+
 		return redirect()->back();
 	}
 
@@ -109,14 +157,21 @@ class AbsensiController extends Controller
                 })
 
                 ->addColumn('status', function ($row) {
-                    if($row->waktu_absen){
+                    if($row->status == 1){
                         return '<span class="badge badge-success">Sudah Absensi</span>';
-                    }else{
-                        return '<span class="badge badge-warning">Belum Absensi</span>';
+                    }elseif($row->status == 2){
+                        return '<span class="badge badge-warning">Berhalangan</span>';
                     }
                 })
 
-                ->rawColumns(['status'])
+                ->addColumn('action', function($row){
+                    if($row->created_at->format('Y-m-d') == Carbon::now()->format('Y-m-d')){
+                        $btn = '<a href="absensi/edit/'.$row->id.'" class="btn btn-warning" style="padding: 7px 10px">Edit</a>';
+                        return $btn;
+                    }
+                })
+
+                ->rawColumns(['status','action'])
                 ->addIndexColumn()
                 ->make(true);
         }
@@ -134,4 +189,36 @@ class AbsensiController extends Controller
         }
         return redirect()->back();
     }
+
+    public function edit($id)
+    {
+        $title = 'Edit Absensi Karyawan';
+        $appName = Setting::first();
+        $data = Absensi::with('user')->findOrFail($id);
+        $cekJob = DataJob::where('user_id',$data->user_id)
+        ->count();
+        
+        return view('dashboard.absensi.edit', compact('title','appName','data','cekJob'));
+    }
+
+    public function update(Request $request, $id)
+	{
+        try {
+            $request->validate([
+                'status' => 'required',
+            ]);
+    
+            $data['status'] = $request->status;
+            // $data['created_at'] = date('Y-m-d H:i:s');
+            $data['updated_at'] = date('Y-m-d H:i:s');
+            
+            Absensi::where('id',$id)->update($data);
+
+            Alert::success('Sukses','Data Absensi berhasil diupdate');
+        } catch (\Throwable $e) {
+            Alert::error('Error',$e->getMessage());
+        }
+
+		return redirect()->route('absensi.index');
+	}
 }

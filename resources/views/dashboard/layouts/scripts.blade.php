@@ -17,6 +17,7 @@
 <!-- endinject -->
 <!-- Custom js for this page-->
 <script src="{{ asset('theme/template/js/dashboard.js') }}"></script>
+{{-- <script src="{{ asset('theme/template/js/jobs_ds.js') }}"></script> --}}
 <script src="{{ asset('theme/template/js/Chart.roundedBarCharts.js') }}"></script>
 <!-- End custom js for this page-->
 <script type="text/javascript" src="//cdnjs.cloudflare.com/ajax/libs/jquery-validate/1.19.0/jquery.validate.min.js"></script>
@@ -40,6 +41,13 @@
 <script src="https://cdn.datatables.net/buttons/2.2.3/js/buttons.print.min.js"></script>
 <script src="https://cdn.datatables.net/buttons/2.2.3/js/buttons.colVis.min.js"></script>
 
+{{-- highchart --}}
+<script src="https://code.highcharts.com/highcharts.js"></script>
+<script src="https://code.highcharts.com/modules/series-label.js"></script>
+<script src="https://code.highcharts.com/modules/exporting.js"></script>
+<script src="https://code.highcharts.com/modules/export-data.js"></script>
+<script src="https://code.highcharts.com/modules/accessibility.js"></script>
+
 <script>
     $(function () {
         $(document).ready( function () {
@@ -58,5 +66,11 @@
                 $('#modal-restore').modal();
             });
         });
+        $(document).ready(function() {
+        $('#myTable').DataTable( {
+            scrollX:        true,
+            scrollCollapse: true
+        } );
+    } );
     })
 </script>
